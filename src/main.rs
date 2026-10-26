@@ -54,3 +54,15 @@ fn save_cards(path: &PathBuf, cards: &[Card]) -> io::Result<()> {
 
     fs::write(path, contents)
 }
+
+fn main() -> io::Result<()> {
+    let path = data_path();
+    let cards = load_cards(&path)?;
+
+    println!("Loaded {} flashcards", cards.len());
+
+    save_cards(&path, &cards)?;
+    println!("Saved at {}", path.display());
+
+    Ok(())
+}
