@@ -1,10 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH}
-};
-use std::{fs, io, path::PathBuf};
+use std::{fs, io, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Card {
@@ -39,10 +34,23 @@ fn data_path() -> PathBuf {
     home.join(".local/share/imret/cards.json")
 }
 
-fn load_cards() {
-    todo!()
+fn load_cards(path: &PathBuf) -> io::Result<Vec<Card>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let contents = fs::read_to_string(path)?;
+    let cards = serde_json::from_str(&contents).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+
+    Ok(cards)
 }
 
-fn save_cards() {
-    todo!()
+fn save_cards(path: &PathBuf, cards: &[Card]) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let contents = serde_json::to_string_pretty(cards).map_err(|error| io::Error::other(error))?;
+
+    fs::write(path, contents)
 }
