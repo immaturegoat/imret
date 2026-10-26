@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, io, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs, io::{self, Write}, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
+use crossterm::{cursor::MoveTo, event::{self, Event, KeyCode}, execute, terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen}};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Card {
@@ -58,11 +59,40 @@ fn save_cards(path: &PathBuf, cards: &[Card]) -> io::Result<()> {
 fn main() -> io::Result<()> {
     let path = data_path();
     let cards = load_cards(&path)?;
+    
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
 
-    println!("Loaded {} flashcards", cards.len());
+    let result = run_menu(&mut stdout, cards.len());
 
-    save_cards(&path, &cards)?;
-    println!("Saved at {}", path.display());
+    disable_raw_mode()?;
+    execute!(stdout, LeaveAlternateScreen)?;
+
+    result
+}
+
+fn run_menu(stdout: &mut io::Stdout, card_count: usize) -> io::Result<()> {
+    loop {
+        execute!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
+
+        writeln!(stdout, "imret flashcards")?;
+        writeln!(stdout)?;
+        writeln!(stdout, "number of cards: {}", card_count)?;
+        writeln!(stdout)?;
+
+        writeln!(stdout, "[1] create cards")?;
+        writeln!(stdout, "[2] review cards")?;
+        writeln!(stdout, "[q] quit")?;
+        stdout.flush()?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Char('q') => break,
+                _ => {}
+            }
+        }
+    }
 
     Ok(())
 }
