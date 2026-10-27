@@ -32,6 +32,10 @@ fn default_deck() -> String {
     String::from("Default")
 }
 
+fn deck_matches(card_deck: &str, selected_deck: &str) -> bool {
+    card_deck == selected_deck || card_deck.strip_prefix(selected_deck).is_some_and(|remainder| remainder.starts_with("::"))
+}
+
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 } 
@@ -83,12 +87,18 @@ fn run_menu(stdout: &mut io::Stdout, cards: &mut Vec<Card>, path: &PathBuf) -> i
     loop {
         execute!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
 
-        write!(stdout, "imret flashcards\r\n\r\nnumber of cards: {}\r\n\r\n[1] create cards\r\n[2] review cards\r\n[q] quit \r\n", cards.len())?;
+        let card_count = cards.iter().filter(|card| deck_matches(&card.deck, "Default")).count();
+
+        write!(stdout, "imret flashcards\r\n\r\nnumber of cards: {}\r\n\r\n[1] create cards\r\n[2] review cards\r\n[q] quit \r\n", card_count)?;
         stdout.flush()?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Char('1') => create_card(cards, path)?,
+                KeyCode::Char('2') => {
+                    let deck = choose_deck()?;
+                    review_cards(cards, path, &deck);
+                }
                 KeyCode::Char('q') => break,
                 _ => {}
             }
@@ -102,15 +112,72 @@ fn create_card(cards: &mut Vec<Card>, path: &PathBuf) -> io::Result<()> {
     let front = prompt("front:")?;
     let back = prompt("back:")?;
     let deck = choose_deck()?;
+    let reverse = prompt("reverse card? (y/n):")?;
 
     if front.is_empty() || back.is_empty() {
         return Ok(());
     }
 
-    cards.push(Card::new(front, back, deck));
+    cards.push(Card::new(front.clone(), back.clone(), deck.clone()));
+    if reverse.eq_ignore_ascii_case("y") {
+        cards.push(Card::new(back, front, deck));
+    }
+
     save_cards(path, cards)?;
 
     Ok(())
+}
+
+fn review_cards(cards: &mut Vec<Card>, path: &PathBuf, deck: &str) -> io::Result<()> {
+    loop {
+        let Some(index) = cards.iter().position(|card| {deck_matches(&card.deck, deck) && card.due_at <= now()}) else {
+            prompt(&format!("no cards due in {}. press enter to return.", deck))?;
+            return Ok(())
+        };
+
+        let front = cards[index].front.clone();
+        prompt(&format!("{}", front))?;
+
+        let back = cards[index].back.clone();
+        let rating = loop {
+            let answer = prompt(&format!("{back}\n\n(1) again (2) hard (3) good (4)"))?;
+
+            match answer.parse::<u8>() {
+                Ok(rating @ 1..=4) => break rating,
+                _ => continue
+            }
+        };
+
+        schedule(&mut cards[index], rating);
+        save_cards(path, cards)?;
+    }
+}
+
+fn schedule(card: &mut Card, rating: u8) {
+    if rating == 1 {
+        card.repetitions = 0;
+        card.interval_days = 0;
+        card.due_at = now() + 60;
+        return;
+    }
+    
+    let days = match (rating, card.repetitions) {
+        (2, _) => (card.interval_days.max(1) as f32 * 1.2).ceil() as u32,
+        (_, 0) => 1,
+        (_, 1) => 3,
+        _ => (card.interval_days.max(1) as f32 * card.ease).ceil() as u32
+    };
+
+    card.interval_days = days.max(1);
+    card.repetitions += 1;
+
+    if rating == 2 {
+        card.ease = (card.ease - 0.15).max(1.3);
+    } else if rating == 4 {
+        card.ease += 0.15;
+    }
+
+    card.due_at = now() + u64::from(card.interval_days) * 24 * 60 * 60;
 }
 
 fn prompt(label: &str) -> io::Result<String> {
