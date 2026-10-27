@@ -139,17 +139,34 @@ fn review_cards(cards: &mut Vec<Card>, path: &PathBuf, deck: &str) -> io::Result
         prompt(&format!("{}", front))?;
 
         let back = cards[index].back.clone();
-        let rating = loop {
-            let answer = prompt(&format!("{back}\n\n(1) again (2) hard (3) good (4)"))?;
-
-            match answer.parse::<u8>() {
-                Ok(rating @ 1..=4) => break rating,
-                _ => continue
-            }
-        };
+        let Some(rating) = rating_screen(&back)? else {
+            return Ok(());
+        }; 
 
         schedule(&mut cards[index], rating);
         save_cards(path, cards)?;
+    }
+}
+
+fn rating_screen(back: &str) -> io::Result<Option<u8>> {
+    let mut stdout = io::stdout();
+
+    loop {
+        execute!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
+
+        write!(stdout, "{}\r\n\r\n(1) again (2) hard (3) good (4) easy", back)?;
+        stdout.flush()?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Char('1') => return Ok(Some(1)),
+                KeyCode::Char('2') => return Ok(Some(2)),
+                KeyCode::Char('3') => return Ok(Some(3)),
+                KeyCode::Char('4') => return Ok(Some(4)),
+                KeyCode::Esc => return Ok(None),
+                _ => {}
+            }
+        }
     }
 }
 
