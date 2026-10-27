@@ -101,12 +101,13 @@ fn run_menu(stdout: &mut io::Stdout, cards: &mut Vec<Card>, path: &PathBuf) -> i
 fn create_card(cards: &mut Vec<Card>, path: &PathBuf) -> io::Result<()> {
     let front = prompt("front:")?;
     let back = prompt("back:")?;
+    let deck = choose_deck()?;
 
     if front.is_empty() || back.is_empty() {
         return Ok(());
     }
 
-    cards.push(Card::new(front, back, "Default".to_string()));
+    cards.push(Card::new(front, back, deck));
     save_cards(path, cards)?;
 
     Ok(())
@@ -126,4 +127,14 @@ fn prompt(label: &str) -> io::Result<String> {
     execute!(io::stdout(), EnterAlternateScreen, Clear(ClearType::All))?;
     
     Ok(input.trim().to_string())
+}
+
+fn choose_deck() -> io::Result<String> {
+    let deck = prompt("deck:")?;
+
+    if deck.is_empty() {
+        Ok("Default".to_string)
+    } else {
+        Ok(deck)
+    }
 }
