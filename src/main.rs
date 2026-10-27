@@ -58,13 +58,13 @@ fn save_cards(path: &PathBuf, cards: &[Card]) -> io::Result<()> {
 
 fn main() -> io::Result<()> {
     let path = data_path();
-    let cards = load_cards(&path)?;
+    let mut cards = load_cards(&path)?;
     
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
 
-    let result = run_menu(&mut stdout, cards.len());
+    let result = run_menu(&mut stdout, &mut cards, &path);
 
     disable_raw_mode()?;
     execute!(stdout, LeaveAlternateScreen)?;
@@ -72,22 +72,16 @@ fn main() -> io::Result<()> {
     result
 }
 
-fn run_menu(stdout: &mut io::Stdout, card_count: usize) -> io::Result<()> {
+fn run_menu(stdout: &mut io::Stdout, cards: &mut Vec<Card>, path: &PathBuf) -> io::Result<()> {
     loop {
         execute!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
 
-        writeln!(stdout, "imret flashcards")?;
-        writeln!(stdout)?;
-        writeln!(stdout, "number of cards: {}", card_count)?;
-        writeln!(stdout)?;
-
-        writeln!(stdout, "[1] create cards")?;
-        writeln!(stdout, "[2] review cards")?;
-        writeln!(stdout, "[q] quit")?;
+        write!(stdout, "imret flashcards\r\n\r\nnumber of cards: {}\r\n\r\n[1] create cards\r\n[2] review cards\r\n[q] quit \r\n", cards.len())?;
         stdout.flush()?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
+                KeyCode::Char('1') => create_card(cards, path)?,
                 KeyCode::Char('q') => break,
                 _ => {}
             }
@@ -95,4 +89,34 @@ fn run_menu(stdout: &mut io::Stdout, card_count: usize) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn create_card(cards: &mut Vec<Card>, path: &PathBuf) -> io::Result<()> {
+    let front = prompt("front:")?;
+    let back = prompt("back:")?;
+
+    if front.is_empty() || back.is_empty() {
+        return Ok(());
+    }
+
+    cards.push(Card::new(front, back));
+    save_cards(path, cards)?;
+
+    Ok(())
+}
+
+fn prompt(label: &str) -> io::Result<String> {
+    disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+
+    print!("{label} ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+
+    enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen, Clear(ClearType::All))?;
+    
+    Ok(input.trim().to_string())
 }
