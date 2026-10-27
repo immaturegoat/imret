@@ -6,6 +6,8 @@ use crossterm::{cursor::MoveTo, event::{self, Event, KeyCode}, execute, terminal
 struct Card {
     front: String,
     back: String,
+    #[serde(default = "default_deck")]
+    deck: String,
     due_at: u64,
     interval_days: u32,
     repetitions: u32,
@@ -13,16 +15,21 @@ struct Card {
 }
 
 impl Card {
-    fn new(front: String, back: String) -> Self {
+    fn new(front: String, back: String, deck: String) -> Self {
         Self {
             front,
             back,
+            deck,
             due_at: now(),
             interval_days: 0,
             repetitions: 0,
             ease: 2.5
         }
     } 
+}
+
+fn default_deck() -> String {
+    String::from("Default")
 }
 
 fn now() -> u64 {
@@ -99,7 +106,7 @@ fn create_card(cards: &mut Vec<Card>, path: &PathBuf) -> io::Result<()> {
         return Ok(());
     }
 
-    cards.push(Card::new(front, back));
+    cards.push(Card::new(front, back, "Default".to_string()));
     save_cards(path, cards)?;
 
     Ok(())
