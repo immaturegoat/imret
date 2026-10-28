@@ -112,20 +112,45 @@ fn create_card(cards: &mut Vec<Card>, path: &PathBuf) -> io::Result<()> {
     let front = prompt("front:")?;
     let back = prompt("back:")?;
     let deck = choose_deck()?;
-    let reverse = prompt("reverse card? (y/n):")?;
+    
+    let Some(reverse) = reverse_toggle()? else {
+        return Ok(());
+    };
 
     if front.is_empty() || back.is_empty() {
         return Ok(());
     }
 
     cards.push(Card::new(front.clone(), back.clone(), deck.clone()));
-    if reverse.eq_ignore_ascii_case("y") {
+    if reverse {
         cards.push(Card::new(back, front, deck));
     }
 
     save_cards(path, cards)?;
 
     Ok(())
+}
+
+fn reverse_toggle() -> io::Result<Option<bool>> {
+    let mut enabled = false;
+    let mut stdout = io::stdout();
+
+    loop {
+        execute!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
+        write!(stdout, "create flashcards\r\n\r\nreverse card?\r\n\r\n{} Yes\r\n{} No\r\n\r\n<--/--> or Space: toggle   Enter: confirm   Esc: cancel", if enabled {"[x]"} else {"[]"}, if enabled {"[]"} else {"[]"})?;
+        stdout.flush()?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') => {
+                    enabled = !enabled;
+                },
+                KeyCode::Enter => return Ok(Some(enabled)),
+                KeyCode::Esc => return Ok(None),
+                _ => {}
+            }
+        }
+    }
 }
 
 fn review_cards(cards: &mut Vec<Card>, path: &PathBuf, deck: &str) -> io::Result<()> {
