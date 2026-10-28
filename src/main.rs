@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, io::{self, Write}, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
-use crossterm::{cursor::MoveTo, event::{self, Event, KeyCode}, execute, terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen}};
+use crossterm::{cursor::MoveTo, event::{self, Event, KeyCode, read}, execute, terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode}};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Card {
@@ -96,8 +96,9 @@ fn run_menu(stdout: &mut io::Stdout, cards: &mut Vec<Card>, path: &PathBuf) -> i
             match key.code {
                 KeyCode::Char('1') => create_card(cards, path)?,
                 KeyCode::Char('2') => {
-                    let deck = choose_deck()?;
-                    review_cards(cards, path, &deck);
+                    let Some(deck) = choose_deck(cards)? else {
+                        return Ok(());
+                    }; 
                 }
                 KeyCode::Char('q') => break,
                 _ => {}
@@ -111,7 +112,9 @@ fn run_menu(stdout: &mut io::Stdout, cards: &mut Vec<Card>, path: &PathBuf) -> i
 fn create_card(cards: &mut Vec<Card>, path: &PathBuf) -> io::Result<()> {
     let front = prompt("front:")?;
     let back = prompt("back:")?;
-    let deck = choose_deck()?;
+    let Some(deck) = choose_deck(cards)? else {
+        return Ok(());
+    };
     
     let Some(reverse) = reverse_toggle()? else {
         return Ok(());
@@ -238,12 +241,61 @@ fn prompt(label: &str) -> io::Result<String> {
     Ok(input.trim().to_string())
 }
 
-fn choose_deck() -> io::Result<String> {
-    let deck = prompt("deck:")?;
+fn choose_deck(cards: &[Card]) -> io::Result<Option<String>> {
+    let mut decks = vec!["Default".to_string()];
 
-    if deck.is_empty() {
-        Ok("Default".to_string)
-    } else {
-        Ok(deck)
+    for card in cards {
+        let parts: Vec<&str> = card.deck.split("::").collect();
+
+        for end in 1..=parts.len() {
+            decks.push(parts[..end].join("::"));
+        }
+    }
+
+    decks.sort();
+    decks.dedup();
+
+    let new_deck_index = decks.len();
+    let mut selected = 0;
+    let mut stdout = io::stdout();
+
+    loop {
+        execute!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
+        write!(stdout, "decks\r\n\r\n")?;
+
+        for (index, deck) in decks.iter().enumerate() {
+            let indent = "  ".repeat(deck.matches("::").count());
+            let name = deck.rsplit("::").next().unwrap_or(deck);
+            let marker = if index == selected {">"} else {" "};
+
+            write!(stdout, "{}{} {}\r\n", indent, marker, name)?;
+        }
+
+        let marker = if selected == new_deck_index {">"} else {" "};
+        write!(stdout, "\r\n{} create a new deck\r\n\r\nup/down or j/k: move   Enter: select   Esc: cancel", marker)?;
+        stdout.flush()?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    selected = selected.saturating_sub(1);
+                },
+                KeyCode::Down | KeyCode::Char('j') => {
+                    selected = (selected + 1).min(new_deck_index);
+                },
+                KeyCode::Enter if selected == new_deck_index => {
+                    let name = prompt("new deck name (use :: for subdecks):")?;
+
+                    if name.is_empty() {
+                        return Ok(None);
+                    }
+                    
+                    return Ok(Some(name));
+                },
+                KeyCode::Enter => return Ok(Some(decks[selected].clone())),
+                KeyCode::Esc => return Ok(None),
+                _ => {}
+            }
+        }
     }
 }
